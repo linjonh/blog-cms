@@ -134,8 +134,8 @@ PGPASSWORD=jaysen pg_restore -U strapiuser -h 127.0.0.1 -p 5433 -d strapidb -v s
 
 ```bash
 # 先删除并重建目标数据库，然后导入数据
-docker exec -i blog_postgres psql -U strapiuser -c "DROP DATABASE IF EXISTS strapidb;"
-docker exec -i blog_postgres psql -U strapiuser -c "CREATE DATABASE strapidb;"
+sudo docker exec -i blog_postgres psql -U strapiuser -c "DROP DATABASE IF EXISTS strapidb;"
+sudo docker exec -i blog_postgres psql -U strapiuser -c "CREATE DATABASE strapidb;"
 
 PGPASSWORD=jaysen pg_dump -U strapiuser -h 127.0.0.1 -p 5432 -F c strapidb | \
 PGPASSWORD=jaysen pg_restore -U strapiuser -h 127.0.0.1 -p 5433 -d strapidb --no-owner --role=strapiuser -v
@@ -173,3 +173,10 @@ PGPASSWORD=jaysen pg_restore -U strapiuser -h 127.0.0.1 -p 5433 -d strapidb --no
 * 适合中小型数据库，一次性传输
 
 ---
+
+# ✅ docker compose的宿主机后台管理
+
+- Strapi: http://localhost:1337/admin # CMS 内容管理
+- Meilisearch 控制台: http://localhost:7700 #搜索引擎控制台
+- Adminer: http://localhost:8089 # 网页方式连接数据库
+- PostgreSQL: 127.0.0.1:5433 #psql连接方式

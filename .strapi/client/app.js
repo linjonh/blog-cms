@@ -4,11 +4,13 @@
  */
 import strapiCloud from "@strapi/plugin-cloud/strapi-admin";
 import usersPermissions from "@strapi/plugin-users-permissions/strapi-admin";
+import meilisearch from "strapi-plugin-meilisearch/strapi-admin";
 import { renderAdmin } from "@strapi/strapi/admin";
 
 renderAdmin(document.getElementById("strapi"), {
   plugins: {
     "strapi-cloud": strapiCloud,
     "users-permissions": usersPermissions,
+    meilisearch: meilisearch,
   },
 });

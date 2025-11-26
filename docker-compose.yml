@@ -1,4 +1,5 @@
 services:
+#postgreSQL
   postgres:
     image: postgres:16
     container_name: blog_postgres
@@ -11,7 +12,18 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5433:5432"
-
+  #搜索
+  meilisearch:
+      image: getmeili/meilisearch:latest
+      container_name: meilisearch
+      restart: always
+      environment:
+        MEILI_MASTER_KEY: masterKey
+      ports:
+        - "7700:7700"
+      volumes:
+        - meili_data:/meili_data
+  # strapi cms
   strapi:
     container_name: blog_strapi
     build:
@@ -21,6 +33,7 @@ services:
     env_file: .env
     depends_on:
       - postgres
+      - meilisearch
     volumes:
       - ./:/srv/app
     ports:
@@ -28,8 +41,17 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 1337
+      DATABASE_CLIENT: postgres
       DATABASE_HOST: postgres
-      
+      DATABASE_PORT: 5432
+      DATABASE_NAME: strapidb
+      DATABASE_USERNAME: strapiuser
+      DATABASE_PASSWORD: jaysen
+      DATABASE_SSL: "false"
+
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: masterKey
+  #nginx Docker内部代理
   nginx:
     image: nginx:latest
     container_name: blog_nginx
@@ -41,5 +63,20 @@ services:
     depends_on:
       - strapi
 
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    restart: always
+    ports:
+      - "8089:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+
 volumes:
   postgres_data:
+  meili_data:
+
+# Strapi: http://localhost:1337/admin # CMS 内容管理
+# Meilisearch 控制台: http://localhost:7700 #搜索引擎控制台
+# Adminer: http://localhost:8089 # 网页方式连接数据库
+# PostgreSQL: 127.0.0.1:5433 #psql连接方式
