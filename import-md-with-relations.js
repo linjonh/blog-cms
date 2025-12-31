@@ -103,6 +103,23 @@ async function getOrCreateCategory(name) {
     console.log(`📁 创建分类：${name} (ID ${id})`);
     return id;
   } catch (err) {
+    // 如果是唯一性约束错误，说明已被其他并发请求创建，重新查询
+    if (err.response?.data?.error?.message === "This attribute must be unique") {
+      console.log(`🔄 分类 "${name}" 已存在，重新查询...`);
+      try {
+        const retrySearchRes = await axios.get(
+          `${STRAPI_URL}/api/categories?filters[name][$eq]=${encodeURIComponent(name)}`,
+          config
+        );
+        if (retrySearchRes.data.data.length > 0) {
+          const id = retrySearchRes.data.data[0].id;
+          categoryCache.set(name, id);
+          return id;
+        }
+      } catch (retryErr) {
+        console.error(`❌ 重新查询分类失败 ${name}`, retryErr.response?.data || retryErr);
+      }
+    }
     console.error(`❌ 分类失败 ${name}`, err.response?.data || err);
     return null;
   }
@@ -135,7 +152,24 @@ async function getOrCreateTag(name) {
     console.log(`🏷 创建标签：${name} (ID ${id})`);
     return id;
   } catch (err) {
-    console.error(`❌ 标签失败 ${name}`, err.response?.data || err);
+    // 如果是唯一性约束错误，说明已被其他并发请求创建，重新查询
+    if (err.response?.data?.error?.message === "This attribute must be unique") {
+      console.log(`🔄 标签 "${name}" 已存在，重新查询...`);
+      try {
+        const retrySearchRes = await axios.get(
+          `${STRAPI_URL}/api/tags?filters[name][$eq]=${encodeURIComponent(name)}`,
+          config
+        );
+        if (retrySearchRes.data.data.length > 0) {
+          const id = retrySearchRes.data.data[0].id;
+          tagCache.set(name, id);
+          return id;
+        }
+      } catch (retryErr) {
+        console.error(`❌ 重新查询标签失败 ${name}`, retryErr.response?.data || retryErr);
+      }
+    }
+    console.error(`❌ 标签失败 ${name}`, JSON.stringify(err.response?.data || err),null,2);
     return null;
   }
 }
@@ -248,6 +282,28 @@ async function processOneMarkdown(file) {
     }
     return true;
   } catch (err) {
+    // 如果是标题唯一性约束错误，尝试查询并更新
+    if (err.response?.data?.error?.message === "This attribute must be unique") {
+      const uniqueError = err.response.data.error.details?.errors?.[0];
+      if (uniqueError?.path?.[0] === "title") {
+        console.log(`🔄 文章标题 "${title}" 已存在，尝试更新...`);
+        try {
+          const retrySearchRes = await axios.get(
+            `${STRAPI_URL}/api/articles?filters[title][$eq]=${encodeURIComponent(title)}`,
+            config
+          );
+          if (retrySearchRes.data.data.length > 0) {
+            const docId = retrySearchRes.data.data[0].documentId;
+            await axios.put(`${STRAPI_URL}/api/articles/${docId}`, { data: articleData }, config);
+            console.log(`🔁 已更新文章：${title} (docId: ${docId})`);
+            return true;
+          }
+        } catch (retryErr) {
+          console.error(`❌ 重新查询并更新文章失败 ${title}`, retryErr.response?.data || retryErr);
+        }
+      }
+    }
+
     console.error(`❌ 失败：${title}`, err.stack);
     console.error(JSON.stringify(err.response?.data || err, null, 2));
     return false;
@@ -338,7 +394,7 @@ async function syncToMeilisearch() {
 
     console.log(`✅ 已同步 ${documents.length} 篇文章到 Meilisearch`);
   } catch (error) {
-    console.error("❌ 同步 Meilisearch 失败:", error.response?.data || error.message);
+    console.error("❌ 同步 Meilisearch 失败:", JSON.stringify(error.response?.data || error.message),null,2);
   }
 }
 
@@ -350,15 +406,15 @@ async function start() {
   let files = fs.readdirSync(POSTS_DIR).filter((f) => f.endsWith(".md"));
   files = files
     .filter((f) => !f.startsWith(".")) // 排除隐藏文件
-    .filter((f) => {
-      //只保留某段时间的文章
-      const start_2025 = f.startsWith("2025");
-      let index = f.lastIndexOf("-");
-      if (index > 0) {
-        const datePart = f.substring(0, index);
-        return start_2025 && datePart >= "2025-12-29";
-      }
-    });
+    // .filter((f) => {
+    //   //只保留某段时间的文章
+    //   const start_2025 = f.startsWith("2025");
+    //   let index = f.lastIndexOf("-");
+    //   if (index > 0) {
+    //     const datePart = f.substring(0, index);
+    //     return start_2025 && datePart >= "2025-11-29" && datePart <= "2025-11-31";
+    //   }
+    // });
   // files = [files[1]]; // 只处理第一篇测试
   console.log(`🚀 开始导入，共 ${files.length} 篇文章，线程数：${MAX_CONCURRENCY}`);
 
