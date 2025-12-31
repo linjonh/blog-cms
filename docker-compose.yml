@@ -36,6 +36,9 @@ services:
       - meilisearch
     volumes:
       - ./:/srv/app
+      # 排除 node_modules 和 dist，使用容器内构建的版本，不然meilisearch插件无法使用
+      - /srv/app/node_modules
+      - /srv/app/dist
     ports:
       - "1337:1337"
     environment:

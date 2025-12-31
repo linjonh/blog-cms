@@ -5,10 +5,14 @@ function start(){
     sudo docker compose -f ./docker-compose.yml up -d --build
 }
 # To view logs, uncomment the line below
-#sudo docker logs blog_strapi
+function logs(){
+    # sudo docker logs blog_strapi
+    sudo docker compose -f ./docker-compose.yml logs -f
+}
 # To stop the containers, uncomment the line below
 function stop(){
-    sudo docker compose -f ./docker-compose.yml down -v
+    #sudo docker compose -f ./docker-compose.yml down -v # Remove volumes
+    sudo docker compose -f ./docker-compose.yml down
 }
 
 echo "Strapi deployment script executed."
@@ -21,6 +25,9 @@ case "$1" in
     'stop')
         stop
     ;;
+	'logs')
+		logs
+	;;
     *)
         echo "Usage: $0 {start|stop}"
     ;;
