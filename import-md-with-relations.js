@@ -3,8 +3,9 @@ import path from "path";
 import axios from "axios";
 import matter from "gray-matter";
 
-const STRAPI_URL = "http://localhost:1337";
-const POSTS_DIR = "../techblog/content/posts";
+// const STRAPI_URL = "http://localhost:1337";
+const STRAPI_URL = "https://api.okforks.com";
+const POSTS_DIR = "../techblog/content/posts"; // Markdown 文件目录
 
 const AUTH_TOKEN =
   "Bearer 28a2d3b707a1e5b3d6a3bfda7627aa47b0050147c6c8ef7d72280acb843e831a26121ec08778805b27ce95782f7ebe2e98e63fe92271295ce6ea892cf4be32814bfce3c41ed176bd271a98c0d47284f3ecb0b05950ff1cf3ecd3553cf8ef0f6e771279a4f339face1cc316dcc3f22b8e683e22712c39a11003f12c54f512e606"; // 你的 token
@@ -24,9 +25,18 @@ const getConcurrency = () => {
     return parseInt(process.env.CONCURRENCY, 10);
   }
 
-  return 3; // 默认值
+  return 5; // 默认值
 };
+const getPostsDir = () => {
+  const args = process.argv.slice(2);
+  args[0] = args[0] || "";
+  const dirArg = args.find((arg) => arg.startsWith("--postsDir=")) || `--postsDir=${args[0]}`;
 
+  if (dirArg) {
+    return dirArg.split("=")[1];
+  }
+  return null; // 默认值
+};
 const MAX_CONCURRENCY = getConcurrency();
 
 // 重试配置
@@ -107,10 +117,7 @@ async function getOrCreateCategory(name) {
     if (err.response?.data?.error?.message === "This attribute must be unique") {
       console.log(`🔄 分类 "${name}" 已存在，重新查询...`);
       try {
-        const retrySearchRes = await axios.get(
-          `${STRAPI_URL}/api/categories?filters[name][$eq]=${encodeURIComponent(name)}`,
-          config
-        );
+        const retrySearchRes = await axios.get(`${STRAPI_URL}/api/categories?filters[name][$eq]=${encodeURIComponent(name)}`, config);
         if (retrySearchRes.data.data.length > 0) {
           const id = retrySearchRes.data.data[0].id;
           categoryCache.set(name, id);
@@ -156,10 +163,7 @@ async function getOrCreateTag(name) {
     if (err.response?.data?.error?.message === "This attribute must be unique") {
       console.log(`🔄 标签 "${name}" 已存在，重新查询...`);
       try {
-        const retrySearchRes = await axios.get(
-          `${STRAPI_URL}/api/tags?filters[name][$eq]=${encodeURIComponent(name)}`,
-          config
-        );
+        const retrySearchRes = await axios.get(`${STRAPI_URL}/api/tags?filters[name][$eq]=${encodeURIComponent(name)}`, config);
         if (retrySearchRes.data.data.length > 0) {
           const id = retrySearchRes.data.data[0].id;
           tagCache.set(name, id);
@@ -169,7 +173,7 @@ async function getOrCreateTag(name) {
         console.error(`❌ 重新查询标签失败 ${name}`, retryErr.response?.data || retryErr);
       }
     }
-    console.error(`❌ 标签失败 ${name}`, JSON.stringify(err.response?.data || err),null,2);
+    console.error(`❌ 标签失败 ${name}`, JSON.stringify(err.response?.data || err), null, 2);
     return null;
   }
 }
@@ -179,12 +183,22 @@ async function getOrCreateTag(name) {
 // ------------------------
 
 async function processOneMarkdown(file) {
-  const filePath = path.join(POSTS_DIR, file);
+  let filePath;
+  if (getPostsDir()) {
+    filePath = file;
+  } else {
+    filePath = path.join(POSTS_DIR, file);
+  }
+
   const raw = fs.readFileSync(filePath, "utf8");
   const parsed = matter(raw);
 
   const title = parsed.data.title || "未命名";
-  const title_id = file.replace(".md", "");
+  const index = file.lastIndexOf("/");
+  if (index > 0) {
+    file = file.substring(index + 1);
+  }
+  const title_id = file.replace(".md", ""); // 去掉日期前缀和扩展名
   let content = parsed.content;
   const date = parsed.data.date || new Date().toISOString();
   const artid = String(parsed.data.artid);
@@ -288,10 +302,7 @@ async function processOneMarkdown(file) {
       if (uniqueError?.path?.[0] === "title") {
         console.log(`🔄 文章标题 "${title}" 已存在，尝试更新...`);
         try {
-          const retrySearchRes = await axios.get(
-            `${STRAPI_URL}/api/articles?filters[title][$eq]=${encodeURIComponent(title)}`,
-            config
-          );
+          const retrySearchRes = await axios.get(`${STRAPI_URL}/api/articles?filters[title][$eq]=${encodeURIComponent(title)}`, config);
           if (retrySearchRes.data.data.length > 0) {
             const docId = retrySearchRes.data.data[0].documentId;
             await axios.put(`${STRAPI_URL}/api/articles/${docId}`, { data: articleData }, config);
@@ -349,16 +360,12 @@ async function syncToMeilisearch() {
     // 1. 确保索引存在
     try {
       await axios.get(`${MEILI_URL}/indexes/articles`, {
-        headers: { Authorization: `Bearer ${MEILI_KEY}` }
+        headers: { Authorization: `Bearer ${MEILI_KEY}` },
       });
     } catch (error) {
       if (error.response?.status === 404) {
         console.log("📝 创建 Meilisearch 索引...");
-        await axios.post(
-          `${MEILI_URL}/indexes`,
-          { uid: "articles", primaryKey: "id" },
-          { headers: { Authorization: `Bearer ${MEILI_KEY}` } }
-        );
+        await axios.post(`${MEILI_URL}/indexes`, { uid: "articles", primaryKey: "id" }, { headers: { Authorization: `Bearer ${MEILI_KEY}` } });
       }
     }
 
@@ -394,7 +401,7 @@ async function syncToMeilisearch() {
 
     console.log(`✅ 已同步 ${documents.length} 篇文章到 Meilisearch`);
   } catch (error) {
-    console.error("❌ 同步 Meilisearch 失败:", JSON.stringify(error.response?.data || error.message),null,2);
+    console.error("❌ 同步 Meilisearch 失败:", JSON.stringify(error.response?.data || error.message), null, 2);
   }
 }
 
@@ -403,18 +410,34 @@ async function syncToMeilisearch() {
 // ------------------------
 
 async function start() {
-  let files = fs.readdirSync(POSTS_DIR).filter((f) => f.endsWith(".md"));
-  files = files
-    .filter((f) => !f.startsWith(".")) // 排除隐藏文件
-    // .filter((f) => {
-    //   //只保留某段时间的文章
-    //   const start_2025 = f.startsWith("2025");
-    //   let index = f.lastIndexOf("-");
-    //   if (index > 0) {
-    //     const datePart = f.substring(0, index);
-    //     return start_2025 && datePart >= "2025-11-29" && datePart <= "2025-11-31";
-    //   }
-    // });
+  let files;
+  let jsonFile = getPostsDir();
+  console.log("jsonFile:", jsonFile);
+  if (!jsonFile) {
+    files = fs.readdirSync(POSTS_DIR).filter((f) => f.endsWith(".md"));
+  } else {
+    const jsonData = JSON.parse(fs.readFileSync(jsonFile, "utf-8"));
+    console.log("files from JSON:", typeof jsonData, "isArray:", Array.isArray(jsonData));
+
+    // 确保读取的是数组
+    if (Array.isArray(jsonData)) {
+      files = jsonData;
+    } else {
+      console.error("❌ JSON 文件内容不是数组:", jsonData);
+      throw new Error("JSON 文件格式错误,期望数组格式");
+    }
+  }
+  // files = files.filter((f) => !f.startsWith(".")); // 排除隐藏文件
+
+  // .filter((f) => {
+  //   //只保留某段时间的文章
+  //   const start_2025 = f.startsWith("2025");
+  //   let index = f.lastIndexOf("-");
+  //   if (index > 0) {
+  //     const datePart = f.substring(0, index);
+  //     return start_2025 && datePart >= "2025-11-29" && datePart <= "2025-11-31";
+  //   }
+  // });
   // files = [files[1]]; // 只处理第一篇测试
   console.log(`🚀 开始导入，共 ${files.length} 篇文章，线程数：${MAX_CONCURRENCY}`);
 
